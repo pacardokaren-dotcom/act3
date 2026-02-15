@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PacardoKaren — Control Panel</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <span class="logo-sub">DHT11</span>
+  </div>
+  <nav class="topbar-nav">
+    <a href="dashboard.html" class="nav-btn">DHT11</a>
+    <span class="nav-btn active">Control Panel</span>
+    
+  </nav>
+</header>
+
+<main class="page">
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <div class="sb-item">Node <span class="sb-val">&nbsp;ESP32-NODE-01</span></div>
+    <span class="sb-sep">·</span>
+    <div class="sb-item">Active LEDs <span class="sb-val" id="activeLedCount">&nbsp;0 / 5</span></div>
+    <span class="sb-sep">·</span>
+    <div class="sb-item">Last update <span class="sb-val" id="lastUpdate">&nbsp;—</span></div>
+    <span class="sb-sep">·</span>
+    <div class="sb-item"><span class="live-dot"></span>&nbsp;Firebase sync</div>
+  </div>
+
+  <!-- QUICK ACTIONS -->
+  <div class="section-head">
+    <h2>✿ Quick Actions</h2>
+    <div class="section-line"></div>
+  </div>
+  <div class="quick-actions">
+    <button class="qa-btn all-off" onclick="allOff()">Turn All Off</button>
+    <button class="qa-btn all-on" onclick="allOn()">Turn All On</button>
+    <button class="qa-btn invert" onclick="invertAll()">Invert All</button>
+  </div>
+
+  <!-- LED CARDS -->
+  <div class="section-head">
+    <h2>✿ LED Outputs</h2>
+    <div class="section-line"></div>
+  </div>
+  <div class="led-grid">
+
+    <div class="led-card color-red" id="card-LED1" onclick="toggle('LED1')">
+      <div class="led-id">Channel 01</div>
+      <div class="led-name">LED 1</div>
+      <div class="led-orb-wrap">
+        <div class="led-orb">🌸</div>
+      </div>
+      <div class="led-toggle-row">
+        <span class="led-status" id="status-LED1">Offline</span>
+        <div class="pill-toggle"><div class="knob"></div></div>
+      </div>
+    </div>
+
+    <div class="led-card color-green" id="card-LED2" onclick="toggle('LED2')">
+      <div class="led-id">Channel 02</div>
+      <div class="led-name">LED 2</div>
+      <div class="led-orb-wrap">
+        <div class="led-orb">🌿</div>
+      </div>
+      <div class="led-toggle-row">
+        <span class="led-status" id="status-LED2">Offline</span>
+        <div class="pill-toggle"><div class="knob"></div></div>
+      </div>
+    </div>
+
+    <div class="led-card color-blue" id="card-LED3" onclick="toggle('LED3')">
+      <div class="led-id">Channel 03</div>
+      <div class="led-name">LED 3</div>
+      <div class="led-orb-wrap">
+        <div class="led-orb">💙</div>
+      </div>
+      <div class="led-toggle-row">
+        <span class="led-status" id="status-LED3">Offline</span>
+        <div class="pill-toggle"><div class="knob"></div></div>
+      </div>
+    </div>
+
+    <div class="led-card color-yellow" id="card-LED4" onclick="toggle('LED4')">
+      <div class="led-id">Channel 04</div>
+      <div class="led-name">LED 4</div>
+      <div class="led-orb-wrap">
+        <div class="led-orb">✨</div>
+      </div>
+      <div class="led-toggle-row">
+        <span class="led-status" id="status-LED4">Offline</span>
+        <div class="pill-toggle"><div class="knob"></div></div>
+      </div>
+    </div>
+
+    <div class="led-card color-lavender" id="card-LED5" onclick="toggle('LED5')">
+      <div class="led-id">Channel 05</div>
+      <div class="led-name">LED 5</div>
+      <div class="led-orb-wrap">
+        <div class="led-orb">🪻</div>
+      </div>
+      <div class="led-toggle-row">
+        <span class="led-status" id="status-LED5">Offline</span>
+        <div class="pill-toggle"><div class="knob"></div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ACTIVITY LOG -->
+  <div class="section-head">
+    <h2>✿ Activity Log</h2>
+    <div class="section-line"></div>
+  </div>
+  <div class="log-panel">
+    <div class="log-header">
+      <span class="log-title">Event stream</span>
+      <button class="log-clear" onclick="clearLog()">Clear</button>
+    </div>
+    <div class="log-body" id="logBody">
+      <div class="log-entry">
+        <span class="log-ts">--:--:--</span>
+        <span class="log-msg">System initialized. Awaiting Firebase sync…</span>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyC_gR30JW1mgo7OGAU5wnpCLYjBoNukt_c",
+    authDomain: "karenpacardo2.firebaseapp.com",
+    databaseURL: "https://karenpacardo2-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "karenpacardo2"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const LEDS = ['LED1','LED2','LED3','LED4','LED5'];
+  const states = { LED1:0, LED2:0, LED3:0, LED4:0, LED5:0 };
+
+  function ts() {
+    const d = new Date();
+    return [d.getHours(),d.getMinutes(),d.getSeconds()]
+      .map(n=>n.toString().padStart(2,'0')).join(':');
+  }
+
+  function addLog(msg, cls='') {
+    const body = document.getElementById('logBody');
+    const el = document.createElement('div');
+    el.className = 'log-entry';
+    el.innerHTML = `<span class="log-ts">${ts()}</span><span class="log-msg ${cls}">${msg}</span>`;
+    body.prepend(el);
+    while (body.children.length > 50) body.removeChild(body.lastChild);
+    document.getElementById('lastUpdate').textContent = ' ' + ts();
+  }
+
+  function clearLog() {
+    document.getElementById('logBody').innerHTML =
+      `<div class="log-entry"><span class="log-ts">${ts()}</span><span class="log-msg">Log cleared.</span></div>`;
+  }
+
+  function updateStatusBar() {
+    const count = LEDS.filter(l => states[l] === 1).length;
+    document.getElementById('activeLedCount').textContent = ` ${count} / 5`;
+  }
+
+  function applyUI(dev, state) {
+    const card   = document.getElementById(`card-${dev}`);
+    const status = document.getElementById(`status-${dev}`);
+    if (state === 1) {
+      card.classList.add('active');
+      status.textContent = 'Active';
+    } else {
+      card.classList.remove('active');
+      status.textContent = 'Offline';
+    }
+    states[dev] = state;
+    updateStatusBar();
+  }
+
+  // Listen for Firebase state changes
+  LEDS.forEach(dev => {
+    db.ref(`Controls/${dev}`).on('value', snap => {
+      const d = snap.val();
+      if (d !== null) {
+        const s = typeof d === 'object' ? d.state : d;
+        applyUI(dev, s);
+      }
+    });
+  });
+
+  function toggle(dev) {
+    const newState = states[dev] === 1 ? 0 : 1;
+    db.ref(`Controls/${dev}`).set({ state: newState, timestamp: Date.now() });
+    addLog(
+      `${dev} turned ${newState === 1 ? 'on' : 'off'}`,
+      newState === 1 ? 'log-on' : 'log-off'
+    );
+  }
+
+  function allOff() {
+    LEDS.forEach(dev => db.ref(`Controls/${dev}`).set({ state: 0, timestamp: Date.now() }));
+    addLog('All LEDs turned off', 'log-off');
+  }
+
+  function allOn() {
+    LEDS.forEach(dev => db.ref(`Controls/${dev}`).set({ state: 1, timestamp: Date.now() }));
+    addLog('All LEDs turned on', 'log-on');
+  }
+
+  function invertAll() {
+    LEDS.forEach(dev => {
+      const ns = states[dev] === 1 ? 0 : 1;
+      db.ref(`Controls/${dev}`).set({ state: ns, timestamp: Date.now() });
+    });
+    addLog('All LEDs inverted');
+  }
+</script>
+</body>
+</html>

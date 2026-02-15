@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PacardoKaren — Control Panel</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <span class="logo-sub">DHT11</span>
+  </div>
+  <nav class="topbar-nav">
+    <span class="nav-btn active">DHT11</span>
+    <a href="controls.html" class="nav-btn">Control Panel</a>
+    
+  </nav>
+</header>
+
+<main class="page">
+
+  <!-- FILTER STRIP -->
+  <div class="filter-strip">
+    <div class="fld">
+      <label>Date</label>
+      <input type="date" id="dateInput">
+    </div>
+    <div class="fld">
+      <label>Start Hour</label>
+      <select id="startHour"><option value="">All Hours</option></select>
+    </div>
+    <div class="fld">
+      <label>End Hour</label>
+      <select id="endHour"><option value="">All Hours</option></select>
+    </div>
+    <div class="quick-btns">
+      <span class="quick-btns-label">Quick Select</span>
+      <div class="quick-btns-row">
+        <button class="qbtn" onclick="setRange(0,5)">Night</button>
+        <button class="qbtn" onclick="setRange(6,11)">Morning</button>
+        <button class="qbtn" onclick="setRange(12,17)">Afternoon</button>
+        <button class="qbtn" onclick="setRange(18,23)">Evening</button>
+        <button class="qbtn" onclick="setRange('','')">Full Day</button>
+      </div>
+    </div>
+    <label class="toggle-live" onclick="toggleLive()">
+      <div class="sw-track on" id="sw-track"><div class="sw-thumb"></div></div>
+      <span id="sw-label">Live On</span>
+    </label>
+  </div>
+
+  <!-- STAT CARDS -->
+  <div class="stat-grid">
+    <div class="stat-card temp-card">
+      <div class="stat-tag">Avg Temperature</div>
+      <div class="stat-val" id="avgTemp">--</div>
+      <div class="stat-unit">Celsius</div>
+      <div class="stat-deco">🌡️</div>
+    </div>
+    <div class="stat-card temp-card">
+      <div class="stat-tag">Max Temperature</div>
+      <div class="stat-val" id="maxTemp">--</div>
+      <div class="stat-unit">Celsius</div>
+      <div class="stat-deco">🔺</div>
+    </div>
+    <div class="stat-card hum-card">
+      <div class="stat-tag">Avg Humidity</div>
+      <div class="stat-val" id="avgHum">--</div>
+      <div class="stat-unit">Percent</div>
+      <div class="stat-deco">💧</div>
+    </div>
+    <div class="stat-card hum-card">
+      <div class="stat-tag">Max Humidity</div>
+      <div class="stat-val" id="maxHum">--</div>
+      <div class="stat-unit">Percent</div>
+      <div class="stat-deco">🔺</div>
+    </div>
+  </div>
+
+  <!-- CHART -->
+  <div class="chart-panel">
+    <div class="chart-header">
+      <span class="chart-title">Sensor readings — 1 minute averages</span>
+      <span class="data-count" id="dataCount">Waiting for data…</span>
+    </div>
+    <canvas id="dhtChart" height="80"></canvas>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-panel">
+    <div class="table-top">
+      <span class="table-top-title">Detailed readings — every ~10 seconds</span>
+      <div class="table-controls">
+        <input type="text" class="t-search" id="searchBox" placeholder="Search time…">
+        <select class="t-select" id="rowsPerPage">
+          <option value="10">10 rows</option>
+          <option value="25" selected>25 rows</option>
+          <option value="50">50 rows</option>
+          <option value="100">100 rows</option>
+          <option value="all">All rows</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Temperature</th>
+            <th>Humidity</th>
+            <th>Trend</th>
+          </tr>
+        </thead>
+        <tbody id="historyTable">
+          <tr><td colspan="4" class="no-data"><span>Select a date</span> to view readings</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination-bar" id="paginationBar" style="display:none;">
+      <span class="page-info">Showing <span id="showingRange">0</span> of <span id="totalRows">0</span></span>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <button class="page-btn" id="prevPage" disabled>← Prev</button>
+        <span class="page-num">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+        <button class="page-btn" id="nextPage" disabled>Next →</button>
+      </div>
+    </div>
+
+    <div id="noData" class="no-data" style="display:none;">
+      <span>No readings found</span> for the selected date and range.
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyC_gR30JW1mgo7OGAU5wnpCLYjBoNukt_c",
+    authDomain: "karenpacardo2.firebaseapp.com",
+    databaseURL: "https://karenpacardo2-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "karenpacardo2"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const labels = [], tempData = [], humData = [];
+  const ctx = document.getElementById('dhtChart').getContext('2d');
+  const dhtChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Temperature (°C)',
+          data: tempData,
+          borderColor: '#c96b85',
+          backgroundColor: 'rgba(201,107,133,0.08)',
+          fill: true, tension: 0.45,
+          pointRadius: 3, pointHoverRadius: 6,
+          borderWidth: 2, pointBackgroundColor: '#c96b85'
+        },
+        {
+          label: 'Humidity (%)',
+          data: humData,
+          borderColor: '#7aaed4',
+          backgroundColor: 'rgba(122,174,212,0.07)',
+          fill: true, tension: 0.45,
+          pointRadius: 3, pointHoverRadius: 6,
+          borderWidth: 2, pointBackgroundColor: '#7aaed4'
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          labels: {
+            color: '#b08898',
+            font: { family: 'Nunito', size: 12, weight: '600' },
+            boxWidth: 14, padding: 20
+          }
+        },
+        tooltip: { mode: 'index', intersect: false }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(240,212,218,0.5)' },
+          ticks: { color: '#b08898', font: { family: 'Nunito', size: 11 } }
+        },
+        x: {
+          title: { display: true, text: 'Time (HH:MM)', color: '#b08898', font: { family: 'Nunito', size: 11 } },
+          grid: { display: false },
+          ticks: { color: '#b08898', font: { family: 'Nunito', size: 11 }, maxTicksLimit: 14 }
+        }
+      },
+      animation: { duration: 500, easing: 'easeInOutQuart' }
+    }
+  });
+
+  const dateInput      = document.getElementById('dateInput');
+  const startHourSel   = document.getElementById('startHour');
+  const endHourSel     = document.getElementById('endHour');
+  const tbody          = document.getElementById('historyTable');
+  const searchBox      = document.getElementById('searchBox');
+  const rowsPerPageSel = document.getElementById('rowsPerPage');
+  const prevBtn        = document.getElementById('prevPage');
+  const nextBtn        = document.getElementById('nextPage');
+  const paginationBar  = document.getElementById('paginationBar');
+
+  let currentListener = null;
+  let allPoints = [], filteredPoints = [];
+  let currentPage = 1, rowsPerPage = 25;
+  let liveOn = true;
+
+  dateInput.value = new Date().toISOString().split('T')[0];
+  for (let i = 0; i < 24; i++) {
+    const h = i.toString().padStart(2,'0');
+    startHourSel.innerHTML += `<option value="${h}">${h}:00</option>`;
+    endHourSel.innerHTML   += `<option value="${h}">${h}:59</option>`;
+  }
+
+  function setRange(s, e) {
+    startHourSel.value = s === '' ? '' : s.toString().padStart(2,'0');
+    endHourSel.value   = e === '' ? '' : e.toString().padStart(2,'0');
+    startListener();
+  }
+
+  function toggleLive() {
+    liveOn = !liveOn;
+    const track = document.getElementById('sw-track');
+    const lbl   = document.getElementById('sw-label');
+    if (liveOn) {
+      track.classList.add('on'); lbl.textContent = 'Live On';
+      startListener();
+    } else {
+      track.classList.remove('on'); lbl.textContent = 'Live Off';
+      if (currentListener) { currentListener.off(); currentListener = null; }
+      document.getElementById('dataCount').textContent += ' · Paused';
+    }
+  }
+
+  function aggregateByMinute(pts) {
+    const map = new Map();
+    pts.forEach(p => {
+      const key = p.time.split(':').slice(0,2).join(':');
+      if (!map.has(key)) map.set(key, { temps:[], hums:[], ts: p.timestamp });
+      map.get(key).temps.push(p.temp);
+      map.get(key).hums.push(p.hum);
+    });
+    const out = [];
+    map.forEach((v,k) => out.push({
+      time: k,
+      temp: parseFloat((v.temps.reduce((a,b)=>a+b,0)/v.temps.length).toFixed(1)),
+      hum:  parseFloat((v.hums.reduce((a,b)=>a+b,0)/v.hums.length).toFixed(1)),
+      timestamp: v.ts
+    }));
+    return out.sort((a,b)=>a.timestamp-b.timestamp);
+  }
+
+  function startListener() {
+    const date = dateInput.value;
+    if (!date) return;
+    const startH = startHourSel.value, endH = endHourSel.value;
+    if (currentListener) currentListener.off();
+    labels.length = tempData.length = humData.length = 0;
+    allPoints = [];
+
+    currentListener = db.ref(`DHT11/${date}`);
+    currentListener.on('value', snap => {
+      if (!snap.exists()) { showNoData(); return; }
+      let pts = [];
+      snap.forEach(hNode => {
+        const hr = hNode.key;
+        if (startH && parseInt(hr) < parseInt(startH)) return;
+        if (endH   && parseInt(hr) > parseInt(endH))   return;
+        hNode.forEach(mNode => {
+          mNode.forEach(sNode => {
+            const d = sNode.val();
+            pts.push({
+              time: `${hr}:${mNode.key}:${sNode.key}`,
+              temp: d.temperature, hum: d.humidity,
+              timestamp: new Date(`${date}T${hr}:${mNode.key}:${sNode.key}`)
+            });
+          });
+        });
+      });
+      if (!pts.length) { showNoData(); return; }
+      pts.sort((a,b)=>b.timestamp-a.timestamp);
+      allPoints = pts; filteredPoints = pts; currentPage = 1;
+      const graph = aggregateByMinute(pts);
+      labels.length = tempData.length = humData.length = 0;
+      graph.forEach(p => { labels.push(p.time); tempData.push(p.temp); humData.push(p.hum); });
+      calcStats(pts); dhtChart.update();
+      document.getElementById('noData').style.display = 'none';
+      document.getElementById('dataCount').textContent = `${graph.length} minute points  ·  ${pts.length} total readings`;
+      renderTable();
+    });
+  }
+
+  function calcStats(pts) {
+    const T = pts.map(p=>p.temp), H = pts.map(p=>p.hum);
+    document.getElementById('avgTemp').textContent = (T.reduce((a,b)=>a+b,0)/T.length).toFixed(1);
+    document.getElementById('maxTemp').textContent = Math.max(...T).toFixed(1);
+    document.getElementById('avgHum').textContent  = (H.reduce((a,b)=>a+b,0)/H.length).toFixed(1);
+    document.getElementById('maxHum').textContent  = Math.max(...H).toFixed(1);
+  }
+
+  function renderTable() {
+    tbody.innerHTML = '';
+    if (!filteredPoints.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="no-data"><span>No results</span> match your search</td></tr>';
+      paginationBar.style.display = 'none'; return;
+    }
+    const total = filteredPoints.length;
+    const rpp = rowsPerPage === 'all' ? total : parseInt(rowsPerPage);
+    const tPages = Math.ceil(total/rpp);
+    if (currentPage > tPages) currentPage = tPages;
+    const s = (currentPage-1)*rpp, e = rowsPerPage==='all'?total:Math.min(s+rpp,total);
+    filteredPoints.slice(s,e).forEach((p,i)=>{
+      const gi=s+i, prev=gi<filteredPoints.length-1?filteredPoints[gi+1]:p;
+      const tdiff=(p.temp-prev.temp).toFixed(1), hdiff=(p.hum-prev.hum).toFixed(1);
+      const ta=p.temp>prev.temp?'↑':p.temp<prev.temp?'↓':'→';
+      const ha=p.hum>prev.hum?'↑':p.hum<prev.hum?'↓':'→';
+      tbody.innerHTML+=`<tr>
+        <td><span class="badge-time">${p.time}</span></td>
+        <td><span class="badge-temp">${p.temp}°C</span></td>
+        <td><span class="badge-hum">${p.hum}%</span></td>
+        <td class="trend-cell">
+          Temp: <span style="color:${p.temp>prev.temp?'#c96b85':p.temp<prev.temp?'#6ab88a':'#b08898'}">${ta} ${tdiff>0?'+':''}${tdiff}°</span>
+          &nbsp;&middot;&nbsp;
+          Humidity: <span style="color:${p.hum>prev.hum?'#7aaed4':p.hum<prev.hum?'#d4a85a':'#b08898'}">${ha} ${hdiff>0?'+':''}${hdiff}%</span>
+        </td>
+      </tr>`;
+    });
+    document.getElementById('currentPage').textContent=currentPage;
+    document.getElementById('totalPages').textContent=tPages;
+    document.getElementById('totalRows').textContent=total;
+    document.getElementById('showingRange').textContent=`${s+1}–${e}`;
+    prevBtn.disabled=currentPage===1;
+    nextBtn.disabled=currentPage===tPages||rowsPerPage==='all';
+    paginationBar.style.display=rowsPerPage==='all'?'none':'flex';
+  }
+
+  function showNoData() {
+    document.getElementById('noData').style.display='block';
+    document.getElementById('dataCount').textContent='No data available';
+    tbody.innerHTML='<tr><td colspan="4" class="no-data"><span>No data</span> for selected filters</td></tr>';
+    paginationBar.style.display='none';
+    ['avgTemp','maxTemp','avgHum','maxHum'].forEach(id=>document.getElementById(id).textContent='--');
+  }
+
+  searchBox.addEventListener('input',()=>{
+    const q=searchBox.value.toLowerCase();
+    filteredPoints=q?allPoints.filter(p=>p.time.toLowerCase().includes(q)):allPoints;
+    currentPage=1; renderTable();
+  });
+  rowsPerPageSel.addEventListener('change',()=>{ rowsPerPage=rowsPerPageSel.value; currentPage=1; renderTable(); });
+  prevBtn.addEventListener('click',()=>{ if(currentPage>1){currentPage--;renderTable();} });
+  nextBtn.addEventListener('click',()=>{
+    const tp=Math.ceil(filteredPoints.length/parseInt(rowsPerPage));
+    if(currentPage<tp){currentPage++;renderTable();}
+  });
+  dateInput.addEventListener('change', startListener);
+  startHourSel.addEventListener('change', startListener);
+  endHourSel.addEventListener('change', startListener);
+  startListener();
+</script>
+</body>
+</html>
